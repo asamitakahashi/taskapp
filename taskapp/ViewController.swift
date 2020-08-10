@@ -7,45 +7,119 @@
 //
 
 import UIKit
+import RealmSwift  //　←追加
+import UserNotifications
 
 class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource{
-@IBOutlet weak var tableView: UITableView!
+    @IBOutlet weak var tableView: UITableView!
+
+    
+    // Realmインスタンスを取得する
+    let realm = try! Realm()  //追加
+    var task: Task!
+    
+    //　DB内のタスクが格納されるリスト．
+    //　日付の近い順でソート　：　昇順
+    // 以降内容をアップデートするとリスト内は自動的に更新される．
+    
+    var taskArray = try! Realm().objects(Task.self).sorted(byKeyPath: "date", ascending: true)
+    // 追加
+    
     
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
         tableView.delegate = self
-                tableView.dataSource = self
-            }
+        tableView.dataSource = self
+    }
+    
+    //　入力画面から戻ってきた時に　Table view を更新させる
+    override func viewWillAppear(_ animated: Bool){
+        super.viewWillAppear(animated)
+        tableView.reloadData()
 
-        // データの数（＝セルの数）を返すメソッド
-            func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int)-> Int {
-                return 0
-            }
-
-        //　各セルを選択した時に実行されるメソッド
-            func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell{
-                //再利用可能な　cell をえる
-                let cell = tableView.dequeueReusableCell(withIdentifier: "cell",
-                for: indexPath)
-
-                  return cell
-            }
+    }
+    
+    // データの数（＝セルの数）を返すメソッド
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int)-> Int {
+        return taskArray.count    //修正する
+    }
+    
+    //　各セルの内容を返すメソッド
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell{
+        //再利用可能な　cell をえる
+        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell",
+                                                 for: indexPath)
+        
+        //　Cellに値を設定する　-------　ここから　---
+        let task = taskArray[indexPath.row]
+        cell.textLabel?.text = task.title
+        
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        
+        let dateString:String = formatter.string(from: task.date)
+        cell.detailTextLabel?.text = dateString
+        // --- ここまで追加　---
+        
+        return cell
+    }
+    
+    //　各セルを選択した時に実行されるメソッド
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        performSegue(withIdentifier: "cellSegue", sender: nil)
+    }
+    
+    //　セルが削除可能なことを伝えるメソッド
+    func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath)-> UITableViewCell.EditingStyle{
+        return .delete
+    }
+    
+    // Deleate ボタンが押された時に呼ばれるメソッド
+    func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath){
+        // ____　ここから　_______
+        if editingStyle == .delete {
+            // 削除するタスクを取得する
+            let task = self.taskArray[indexPath.row]
             
-            //　各セルを選択した時に実行されるメソッド
-            func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-                performSegue(withIdentifier: "cellSegue", sender: nil) // ←追加する
-            }
+            // ローカル通知をキャンセルする
+            let center = UNUserNotificationCenter.current()
+            center.removePendingNotificationRequests(withIdentifiers: [String(task.id)])
             
-            //　セルが削除可能なことを伝えるメソッド
-            func tableView(_ tableView: UITableView, editingStyleForRowAt indexPath: IndexPath)-> UITableViewCell.EditingStyle{
-                return .delete
+            //　データベースから削除する
+            try! realm.write{
+                self.realm.delete(task)
+                tableView.deleteRows(at: [indexPath], with: .fade)
             }
-            
-            // Deleate ボタンが押された時に呼ばれるメソッド
-            func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath){
-         }
+    //　未通知のローカル通知一覧をログ出力
+    center.getPendingNotificationRequests{ (requests: [UNNotificationRequest])
+    in
+        for request in requests{
+    print("/---------------")
+    print(request)
+    print("---------------------/")
+    }
+    }
+} // ーーーーーーーーー　ここまで変更　ーーーーーーーーーーーー
 }
-
-
-
+    
+// segue で画面遷移するときに呼ばれる
+override func prepare(for segue: UIStoryboardSegue, sender: Any?){
+    let inputViewController:InputViewController = segue.destination
+        as! InputViewController
+    
+    if segue.identifier == "cellSegue"{
+        let indexPath = self.tableView.indexPathForSelectedRow
+        inputViewController.task = taskArray[indexPath!.row]
+    }else{
+        let task = Task()
+        
+        let allTasks = realm.objects(Task.self)
+        if allTasks.count != 0 {
+            task.id = allTasks.max(ofProperty: "id")! + 1
+        }
+        
+        inputViewController.task = task
+    }
+}
+}
